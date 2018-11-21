@@ -1,20 +1,8 @@
 Execute in order:
 
-kinit tomalin@CERN.CH
+kinit mghorban@CERN.CH
 
-# Get IPBB softare (check version mentioned in https://gitlab.cern.ch/p2-xware/firmware/emp-fwk/wikis/payload-firmware)
-
-rm -rf ipbb-test-hls
-curl -L https://github.com/ipbus/ipbb/archive/v0.3.4.tar.gz | tar xvz
-Comment out the buggy line "pip install -q --upgrade pip" inside ipbb-0.3.4/env.sh .
-ln -s ipbb-0.3.5/ ipbb-test-hls
-ipbb_init
-
-# Create .txt file input
-mkdir txt_files/
-cd txt_files
-tar -xzvf /afs/cern.ch/work/t/thea/public/tmtt-demo/htMiniStub_5ev_RelValSingleElPt1p5to8_pythia8.tgz
-cd ..
+# make changes to make_setup to reflect changes in CMSUKTrkTrig repository.
 
 ./make_setup
 ./make_tb_proj
