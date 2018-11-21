@@ -1,0 +1,24 @@
+#!/bin/tcsh
+
+cd kf-hls-work
+
+rm -rf proj
+
+#ipbb proj create sim tb-kf-hls kf:top -t tb_KFplusDR.dep 
+ipbb proj create sim tb-kf-hls kf:top -t tb_KalmanFilter.dep 
+
+cd proj/tb-kf-hls
+ 
+ipbb sim setup-simlib  # Adds QuestSim compiled Xilinx libraries to ~/.xilinx_sim_libs/2018.2
+ipbb sim ipcores 
+ipbb sim mifs 
+ipbb sim make-project # Needed by Andy’s framework mkdir debug (rerun this command if you change .vhd files)
+
+echo "To suppress warnings, edit kf-hls-work/proj/tb-kf-hls/modelsim.ini , adding:"
+echo "[vsim]"
+echo "NumericStdNoWarnings = 1"
+echo "StdArithNoWarnings = 1"
+echo "[msg_system]"
+echo "Suppress = 8780,8683,8684"
+
+exit

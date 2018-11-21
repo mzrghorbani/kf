@@ -1,0 +1,31 @@
+m255
+K4
+z2
+13
+!s112 1.1
+!i10d 8192
+!i10e 25
+!i10f 100
+cModel Technology
+Z0 d/home/mghorbani/workspace/simulations/kf-hls-work/proj/tb-kf-hls/ipcores_sim/modelsim
+Pvcomponents
+DPx3 std 6 textio 0 22 zE1`LPoLg^DX3Oz^4Fj1K3
+DPx4 ieee 14 std_logic_1164 0 22 eNV`TJ_GofJTzYa?f<@Oe1
+w1529034968
+R0
+8/home/mghorbani/Xilinx/Vivado/2018.2/data/ip/xpm/xpm_VCOMP.vhd
+F/home/mghorbani/Xilinx/Vivado/2018.2/data/ip/xpm/xpm_VCOMP.vhd
+l0
+L11
+VWLNj1=6V_`n1X3H^FE_jJ3
+!s100 @hYIn5UZ8WVCcJzPPS@8N3
+OV;C;10.5c;63
+31
+!s110 1542805461
+!i10b 1
+!s108 1542805461.000000
+!s90 -work|xpm|-93|/home/mghorbani/Xilinx/Vivado/2018.2/data/ip/xpm/xpm_VCOMP.vhd|
+!s107 /home/mghorbani/Xilinx/Vivado/2018.2/data/ip/xpm/xpm_VCOMP.vhd|
+!i113 1
+o-work xpm -93
+tExplicit 1 CvgOpt 0

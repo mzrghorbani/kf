@@ -1,0 +1,233 @@
+N.B. If not defined, variable named used below correspond to KF paper.
+
+0) Definitions:
+
+m = hit position (phi,z)
+V = hit position covariance matrix in (phi,z).
+x = helix params
+C = helix params covariance matrix
+H = derivative matrix (expected stub position w.r.t. helix params)
+K = KF gain matrix
+Boring in C++: F is unit matrix; pxxm = zero matrix; fx = helix params x; pxcov = helix cov matrix cov_xa
+
+1) KF4ParamsComb inherits from L1KalmanComb.
+
+2) L1KalmanComb::fit() -- called for each track candidate.
+
+a) Eliminates identical duplicate stubs. Unnecessary?
+
+b) Stubs stored in map<KF layer, vector<stubs>>, where within each layer are sorted by z (barrel) or r (endcap). The KF layer is in range 0-6, and is derived from layerIdReduced() using the constants
+in array layerMap (in KF4ParamsComb), with the conversion from one to the other being different in each eta region.
+
+In a few eta regions, stubs can be in either barrel or endcap, in which case different constants
+to those in layerMap are needed, as encoded in code underneath it in L1KalmanCode::doKF().
+
+QUESTION: Why is sort done? It is never used.
+
+c) Stub uncertainty in phi has two contributions, to be added in quadrature (!) (from StubCluster):
+
+dphi_dl = sigmaX/r
+dphi_dr = sigmaZ*(iStrip - 0.5*nStrips)*pitch/r^2
+
+where sigmaX(Z) are strip/pixel pitch & length / sqrt(12). Not needed because of (7c)?
+
+4) KF4ParamsComb::seedx() -- notes input helix params, relative to centre of phi sector,
+   with 1/2R being one of them.
+
+5) KF4ParamsComb::seedP() -- assigns diagonal cov. matrix C to input helix params with hard-wired consts.
+
+6) KF4ParamsComb::doKF():
+
+a) Iteration 0: adds stubs from KF layer = 0 to seed.
+b) Iteration 1: adds stubs from LF layer = 1 to seed, but excluding those that are in 2S modules (r > 60cm).
+c) Iteration n > 1 adds stubs from layer n.
+
+Subtlety, each iteration also addes stubs from the after-next layer, but creating states using them with
+#SkippedLayers incrememented by 1. But it only does this if #SkippedLayers < 2.
+
+7) L1KalmanComb::kalmanUpdate() updates KF state with each stub in turn from (6) within a layer.     
+
+a) KF4ParamsComb::H() defines derivatives matrix H(2,4) -- depends on stub r only.
+
+b) L1KalmanComb::residual() calculates (phi,z) residuals D = (m - H*x), where m is hit position &
+x is helix params.
+
+c) KF4ParamsComb::PddMeas() estimates hit position covariance matrix V. N.B. (2c above unnecessary?)
+   In barrel, uncertainty in (phi,z) is (sigmaX/r, sigmaZ).
+   In endcap, uncertainty in (phi,z) is (sigmaX/r + sigmaZ/2RTrack, sigmaZ*tanLambdaTrack),
+     where extra terms are uncertainty in track intercept caused by not knowing exact r of stub.
+     (N.B. Fit assumes uncertainty in r is zero, so this is bodged here).
+
+   N.B. sigmaZ is inflated by digitisation uncertainty.
+   N.B. Wierd factors of 0.9 & 1.05 present just because they helped.
+   N.B. V should have off-diagonal term due to uncertainty in r, of (sigmaZ/2RTrack)*(sigmaZ/tanLambdaTrack), neglected in C++.
+   QUESTION: how is divide by r handled?
+
+d) L1KalmanComb::GetKalmanMatrix() calculates gain matrix:
+
+S = C*H(transpose)
+R = V + H*S
+U = R(inverse) - only 2x2 matrix
+K = S*U
+
+e) L1KalmanComb::GetAdjustedState() updates helix params & covariance with stub.
+
+x(updated) = x + K*D, where R calculated by (7b)
+
+Q = I - K*H
+C(updated) = Q*C
+
+f) L1KalmanComb::calcChi2() increments the track chi2 to take into account the stub just added,
+where all matrices are those before update.
+
+chi2 += D(transpose)*U*D (from eqn. 13 of KF paper)
+
+8) KF4ParamsComb::isGoodState() decides if updated state is worth keeping.
+
+a) If it has at least 3 layers, then require abs(z0) < 15 & pT > pTmin - 0.1
+b) track chi2 < 15 (2 layers), 100-120 (3 layers), 320-1420 (4 layers)
+
+9) All states produced from the initial state by adding stubs from a given layer to a given track are ordered by chi2. The best 4 states are kept if track has just 1 layer, but only the best 1 state kept if it has more layers.
+
+10) Where the track candidate had previously given > 1 state that has just now been updated by adding stubs,
+then we now have multiple states, even if each state only had 1 stub added to it. These states are
+ordered by chi2*(skipped layers + 1). But this ordering is only used when the final layer is reached, 
+when just the best of these states is output.
+
+N.B. This means that if KF layer 0 has 4 stubs, then each track candidate gives 4 states, which can 
+then all be propagated to all other layers, unless they are killed by chi2/skip cuts.
+
+Firmware
+=========
+
+0) The top-level VHDL is
+ https://svnweb.cern.ch/cern/wsvn/UK-TrackTrig/firmware/trunk/cactusupgrades/projects/tracktrigger/kalmanfit/firmware/hdl/KalmanFilter/KalmanTop.vhd 
+
+For each pair of links:
+
+* InputLinkFormatter creates stubs from input link data.
+* ProtoStateCreator creates KF seed from HT cell, each type stub (mbin,cbin) change.
+* StateStubAssociation contains a huge RAM for storing KF states & associated stubs. It also 
+returns the next stub associated with the input state, and a new output state with nextLayer number
+incrememented by 1.
+* KalmanWorker runs Maxeller KF updator to refit helix params with new stub. All the top-level
+equations are there. (pxdOpt() = C*H, pddInvOpt() = inverse(V+H*C+H), where H is created on the fly)
+* StateFilter checks if KF updator chi2 cuts etc. were passed.
+
+1) Info about the multiplication factors used for digitisation is in https://twiki.cern.ch/twiki/pub/CMS/CMSUKTrkTrig/KFequations.pdf (Section “Demonstrator Units”).
+
+The track phi and stub phi have granularity differing by pow(2,N), where the N extra bits go 
+after the floating point in the Maxeller floating point class. This means that they can have the same
+multipliers for digitisation, simplifying the maths.
+
+The KF doesn't directly use stub z, but instead uses z_KF = (k_r/k_z)*z_digi_stub, where k are the digitisation
+multipliers. This has the advantage that the multiplier used to convert the floating point (r,z) coords
+to the KF digitised (r,z) is k_r for both r & z, simplifying the maths.
+
+Because of the constraints imposed to simplify the HT (see data format document), the digitisation
+multiplier of inv2R is (k_phi/k_r), which also simplifies the maths. The KF extra uses finer granularity
+than the HT, but it adds extra bits after the floating point, allowing it to retain the original
+multiplier.
+
+The KF must also convert stub rT to r by adding the digitised version of 580 mm. The scaling of z and
+addition of 580 are done by parameters ZscalingFactor & RtOffset, respectively, in 
+
+https://svnweb.cern.ch/cern/wsvn/UK-TrackTrig/firmware/trunk/cactusupgrades/projects/tracktrigger/kalmanfit/firmware/hdl/KalmanFilter/LinkFormatter.vhd , which assigns numerical values of ZscalingFactor = (k_r/k_z)*pow(2,23) & RtOffset = 580*k_r. (The pow(2,23) is a trick to make Vivado use a DSP. This factor is dropped later).
+
+2) The VHDL-Maxceller interface is at lines 45-107 (which takes the format MaxellerVariable = VHDLVariable)  of
+
+https://svnweb.cern.ch/cern/wsvn/UK-TrackTrig/firmware/trunk/cactusupgrades/projects/tracktrigger/kalmanfit/firmware/hdl/KalmanFilter/KalmanWorker.vhd?peg=4914
+
+and at statements .input(...) and .output(...) of
+
+https://svnweb.cern.ch/cern/wsvn/UK-TrackTrig/firmware/trunk/cactusupgrades/projects/tracktrigger/kalmanfit/firmware/cgn/src/trackfit/TrackFitKernel.maxj
+
+where booleans z0Cut indicate if Sioni’s firmware says that state passes cut on z0 etc. As these cuts depend on number of layers, Sioni must calculate this from perhaps layerId (= KF layer ID) minus NSkippedLayers.
+
+3) The number of bits inside the State & Stub objects is defined in:
+
+https://svnweb.cern.ch/cern/wsvn/UK-TrackTrig/firmware/trunk/cactusupgrades/projects/tracktrigger/kalmanfit/firmware/hdl/packages/stubs.vhd
+
+https://svnweb.cern.ch/cern/wsvn/UK-TrackTrig/firmware/trunk/cactusupgrades/projects/tracktrigger/kalmanfit/firmware/hdl/packages/KFstates.vhd
+
+4) Some of helix params measured in wierd units. See functions with HWU in name in
+ https://svnweb.cern.ch/cern/wsvn/UK-TrackTrig/firmware/trunk/cactusupgrades/projects/tracktrigger/kalmanfit/firmware/cgn/src/formats/Constants.maxj .
+
+4) Additional info in
+ https://svnweb.cern.ch/cern/wsvn/UK-TrackTrig/firmware/trunk/cactusupgrades/projects/tracktrigger/kalmanfit/firmware/cgn/src/formats/State.maxj by dfeFixMax(). 
+
+ i.e. RINV is encoded with 18 bits up to a maximum value of 51. So rounding 51 up to nearest power of 2 (64), and since 1 of 18 bits is needed for sign, and since pow(2,6) = 64, the number of bits used for the fractional component of RINV is (18-1)-6=11. N.B. Maxeller dfeFixMax(arg1, arg2) myVar; specifies that myVar is encoded with arg1 bits in total, up to a maximum range of arg2. 
+
+Info on covariance matrix is also in State.maxj, by uses dfeFix(arg1, arg2) myVar: specifies use arg1 bits for the integer bits and arg2 fractional bits, so arg1+arg2 bits in total. So on the above link, the (z0,z0) covariance element appears to use 13 bits before the decimal point and 12 after it, though the one for the sign is not used, so it is really 12+12.
+
+KF VHDL
+=======
+
+0) packages/KFstates.vhd & stubs.vhd defines records (like C++ struct) for Stub & State objects,
+and arrays tKfStateArray = KFstate(36) & tKFStatePipe which is an array of these arrays,
+and arrays tStubArray = stub(36) & tStubPipe which is an array of these arrays.
+
+1) Top level: top/payload_KalmanTopWithDuplicateRemoval.vhd -- passes subset of mp7_payload signals
+to (2). No. of I/O links = 4*N_REGION, where N_REGION = 18, defined in boards/mp7/base_fw/mp7xe_690/firmware/hdl/mp7_brd_decl.vhd
+The links carry data of type "ldata(72)" defined in
+components/mp7_datapath/firmware/hdl/mp7_data_types.vhd
+which is an array of lword (= 32 bits + valid, start & strobe bits). i.e. 72 links each carrying
+32+ bits per clock.
+
+2) KalmanFilter/KalmanTopWithDuplicateRemoval.vhd has 72 I/O links (should be 4*N_REGION). 
+It has several steps:
+
+g0 LINKMAP: Swaps links around (since FibreMaoLinks =True) using mapping in packages/LinkMapping.vhd .
+
+g1 LINKFORMATTER: Converts pairs of input links to stubs ("InputStubs") using
+KalmanFilter/LinkFormatter.vhd, which:
+
+    i) Calls function LinkToStub() (packages/stubs.vhd) to convert 64 bits from pair of links to tStub
+format. (EDIT THIS TO CHANGE STUB DATA FORMAT).
+
+   ii) Checks if the next stub will be from a different (m,c) bin, and if so, sets tStub.LastStubInCandidate
+       variable & increments tStub.CandidateID (to indicate new track).
+
+  iii) Convert's Ian encoded layer ID to KF layer ID.
+
+   iv) On each track, tStub.StubID indicates stub number in each layer on each track, 
+       and tStub.EventID is event counter in range 0-3.
+
+    v) Redigitizes stub (r,z) using KF multipliers.
+
+g1 PROTOSTATE: creates seed by calling KalmanFilter/ProtoStateCreator.vhd which reads .mif (=txt) files 
+   to initialize 3 ROMs, for converting (m,c) -> phi0; m -> q/Pt; eta_sector -> tanL.
+   When it encounters the last stub on a track (LastStubInCandidate), it creates a KFstate containing
+   these helix params, seed cov matrix. On other clocks, it outputs invalid null state.
+
+   .mif files created by https://gitlab.cern.ch/cms-uk-tracktrigger/firmware/kf/blob/master/common/firmware/mif/scripts/mif_generator.py
+
+g1 STATESTUBASSOCIATION contains:
+
+     i) A RAM ("StubRam") containing up to 512 stubs (uses Xilinx IP Core cgn/RAM_512x72.xco ,
+       which can be CUSTOMISED WITH INTERNAL REGISTERS AT HIGH FREQUENCY).
+
+   ii) A RAM ("AddressBookRam") containing 8192 8-bit entries (addressed by Candidate ID & Stub ID 
+       & Layer ID & Event ID. Each entry recalls the address in StubRam where ths stub
+
+g1 STATEFILTER calls (KalmanFilter/StateFilter.vhd) which takes output state (IteratedStates) from
+   KF worker and applies cuts to produced FilteredIteratedStates ??????  (N.B. Out of logical order
+   in KalmanTopWithDuplicateRemoval.vhd).
+
+...
+
+g7 OUTPUTLINKFORMATTER formats fitted tracks for output on links according to format in
+DRstates.vhd::ToStdLogicVector().
+
+3) When using the test-bench, .txt file input/output is handled by 
+
+mp7/components/mp7_testbench/firmware/hdl/MP7CaptureFileReader/Writer.vhd , which uses 
+MP7CaptureTools.vhd in the same directory.
+
+It assumes the .txt files contain the no. of links specified as 4*N_REGION in
+emp-fwk/components/mp7_adapter/firmware/hdl/mp7_brd_decl.vhd, (selected from amonst various files defining
+this tb_KalmanFilter.dep), where N_REGION = 18 in 
+emp-fwk/boards/mpultra/firmware/hdl/emp_device_decl.vhd . Tom says one shouldn't change these numbers,
+but instead edit variable REGION_CONFG in kf-hls-work/src/kf/top/firmware/hdl/top_decl.vhd , to indicate
+which of 18 regions is really connected to link and which is Dummy.
+

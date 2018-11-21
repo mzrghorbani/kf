@@ -1,0 +1,10 @@
+#!/bin/sh
+
+if [ ! -f modelsim.ini ]; then
+    echo "WARNING: modelsim.ini not found. Vivado simulation libraries won't be loaded."
+fi
+
+export MTI_VCO_MODE=64
+export MODELSIM_DATAPATH="mif/"
+vsim "$@"
+    

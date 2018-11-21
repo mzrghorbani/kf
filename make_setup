@@ -1,0 +1,25 @@
+#!/bin/tcsh
+
+# kinit mghorban@CERN.CH
+# ipbb init
+
+# Build area setup
+cd ~/workspace/simulations/
+
+if (-e kf-hls-work) rm -rf kf-hls-work
+
+ipbb init kf-hls-work
+
+cd kf-hls-work
+
+# Dependencies
+ipbb add git https://github.com/ipbus/ipbus-firmware -b task/extended-examples 
+ipbb add git https://:@gitlab.cern.ch:8443/p2-xware/firmware/emp-fwk.git -b v0.2.2
+ipbb add git https://:@gitlab.cern.ch:8443/cms-cactus/firmware/mp7.git -b ephemeral/phase2-vC 
+ipbb add git https://:@gitlab.cern.ch:8443/cms-uk-tracktrigger/firmware/dr.git
+ipbb add git https://:@gitlab.cern.ch:8443/cms-uk-tracktrigger/firmware/l1tf.git -b v1.2
+
+# Specific branch 
+ipbb add git https://:@gitlab.cern.ch:8443/cms-uk-tracktrigger/firmware/kf.git
+
+exit

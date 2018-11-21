@@ -1,0 +1,38 @@
+#!/bin/tcsh
+
+set echo
+
+# Capture from command line
+cd kf-hls-work/proj/tb-kf-hls
+
+echo $PWD
+
+if (-e debug) rm -rf debug
+
+mkdir debug
+
+vsim -c work.top -Gsourcefile=../../../txt_files/htMiniStubs64b/ev0_n1/ev0_n1_proc8.txt -Gsinkfile=OutputTracks_ev1.txt -Gcapoffset=737 -Gcaplen=210  -do 'run 3us' -do 'quit'
+
+# Bad chi2 event
+
+#vsim -c work.top -Gsourcefile=../../../txt_files/htMiniStubs32b/ev5_n1/ev5_n1_proc5.txt -Gsinkfile=OutputTracks.txt -do 'run 3us' -do 'quit'
+
+# Offsets for old KF code
+#~/UK_TrackTrig/demo/CMSSW_10_2_5/src/Demonstrator/Scribbler/tools/firmwarepipe.py modelsim ../../../txt_files_1event/htMiniStubs32b ../../../junk/kf4Tracks32b 3us --capoffset 468 --caplen 210 
+
+# Offsets for new KF code
+#~/UK_TrackTrig/demo/CMSSW_10_2_5/src/Demonstrator/Scribbler/tools/firmwarepipe.py modelsim ../../../txt_files_1event/htMiniStubs32b ../../../junk/kf4Tracks32b 3.2us --capoffset 521 --caplen 210 
+
+#=== Useful commands to search output file for stubs or tracks.
+# --- Immediately after adding stub
+# grep -i Update kf-hls-work/proj/tb-kf-hls/debug/KalmanTop.xml | grep -F layerId_=\'2 | grep -F skippedLayerCount=\'0
+# --- After converting to state. (Also try with DRstate)
+# grep -i KFState kf-hls-work/proj/tb-kf-hls/debug/KalmanTop.xml | grep -F layerId_=\'2 | grep -F skippedLayerCount=\'0
+# After final best state selection.
+# grep -i Interleaved kf-hls-work/proj/tb-kf-hls/debug/KalmanTop.xml
+
+grep -i Interleaved debug/KalmanTop.xml
+
+unset echo
+
+exit
